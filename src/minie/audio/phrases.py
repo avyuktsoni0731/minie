@@ -95,8 +95,10 @@ def is_wake_phrase(text: str) -> bool:
         if rest and rest[0] not in _NOT_MINIE and rest[0].startswith("m"):
             if _lev(rest[0], "minie") <= 3 or _lev(rest[0], "minny") <= 2:
                 return True
-    # "Hamanin" / "heyminie" said as one mushy word. Ignore long unrelated speech.
+    # "Hamanin" / "heyminie" said as one mushy word — not "him and he".
     if "human" in collapsed:
+        return False
+    if len(cleaned.split()) > 2:
         return False
     tail = collapsed if len(collapsed) <= 14 else collapsed[-12:]
     if re.search(r"h[aeiouy]{1,3}m[aeiouy]{0,2}n[ieyain]{0,4}", tail):

@@ -19,7 +19,7 @@ def main(argv: list[str] | None = None) -> None:
     run_p = sub.add_parser("run", help="Start the Minie daemon (default)")
     run_p.add_argument("--no-menubar", action="store_true", help="Run in the terminal only")
     run_p.add_argument("--debug", action="store_true")
-    doc = sub.add_parser("doctor", help="Check mic, models, Gemini key, and Cua Driver")
+    doc = sub.add_parser("doctor", help="Check mic, models, Anthropic key, and Cua Driver")
     doc.add_argument("--debug", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--no-menubar", action="store_true")
@@ -108,7 +108,9 @@ def _doctor(config: Config) -> int:
         check("microphone devices", len(devices) > 0, f"{len(devices)} devices")
     except Exception as exc:
         check("sounddevice / PortAudio", False, str(exc))
-    check("GEMINI_API_KEY", bool(config.gemini_api_key), "set in .env" if config.gemini_api_key else "copy .env.example to .env")
+    check("ANTHROPIC_API_KEY", True, "set — Haiku plans CUA steps" if config.anthropic_api_key else "unset — GUI computer-use will refuse")
+    check("TYPESAFE_API_KEY", True, "optional; Haiku picks AX targets until Jev is available")
+    check("GEMINI_API_KEY", True, "optional; default CUA loop does not use it")
     cua_path = shutil.which(config.cua_bin)
     check("cua-driver on PATH", cua_path is not None, cua_path or "install from https://cua.ai/cua-driver")
     if cua_path:

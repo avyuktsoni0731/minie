@@ -180,15 +180,19 @@ class CuaDriver:
             title=str(win.get("title") or ""),
         )
 
-    def open_url(self, url: str) -> None:
+    def open_url(self, url: str, app: str | None = None) -> None:
         if not url:
             raise CuaError("open_url needs a URL")
         if self.config.dry_run:
-            _LOG.info("dry-run open %s", url)
+            _LOG.info("dry-run open %s %s", app or "", url)
             return
+        cmd = ["open"]
+        if app:
+            cmd.extend(["-a", app])
+        cmd.append(url)
         try:
             proc = subprocess.run(
-                ["open", url],
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=10,

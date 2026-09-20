@@ -103,16 +103,24 @@ def parse_open(text: str) -> Intent | None:
 
 def _token_to_digit(token: str) -> str | None:
     token = token.lower().strip()
-    if token.isdigit() and 1 <= len(token) <= 3:
+    if token.isdigit() and 1 <= len(token) <= 2:
+        if len(token) > 1 and set(token) == {"0"}:
+            return None
         return token
     return _NUMBER_WORDS.get(token)
 
 
 def _repair_whisper_math(cleaned: str) -> str:
-    """Tiny-whisper often emits 1000 for 'six'. Don't send that to the GUI loop."""
+    """Tiny-whisper: six→1000/10 000, seven→sine/sign/side/97."""
+    cleaned = re.sub(r"\b(sine|sign|side|sin)\b", "7", cleaned)
+    cleaned = re.sub(r"(\d)\s+(\d{3})\b", r"\1\2", cleaned)
     if "thousand" in cleaned:
         return cleaned
-    return re.sub(r"\b1000+\b", "6", cleaned)
+    rest = re.sub(r"\b1000+\b", " ", cleaned)
+    if re.search(r"\b1000+\b", cleaned) and re.search(r"\b\d{1,2}\b", rest):
+        cleaned = re.sub(r"\b1000+\b", "6", cleaned)
+        cleaned = re.sub(r"\b(?:9[0-9]|7[0-9]|80)\b", "7", cleaned)
+    return cleaned
 
 
 def looks_like_calculator(text: str) -> bool:
@@ -125,7 +133,7 @@ def looks_like_calculator(text: str) -> bool:
 
 def parse_calculator_math(text: str) -> Intent | None:
     cleaned = _repair_whisper_math(normalize(text))
-    cleaned = re.sub(r"multi[\s-]*(?:plied|ply|cloud)", "multiplied", cleaned)
+    cleaned = re.sub(r"multi[\s-]*(?:plied|ply|plies|cloud)", "multiplied", cleaned)
     if not any(w in cleaned for w in ("calculat", "compute", "times", "plus", "minus", "divid", "multipl")):
         if not re.search(r"\d+\s*([+x*/-]|times|plus)\s*\d+", cleaned):
             return None
@@ -234,20 +242,25 @@ def parse_call(text: str) -> Intent | None:
 
 
 def extra_action_after_open(text: str) -> bool:
-    """True when 'open X and …' still has work beyond launching the app."""
+    """True when opening an app is not the whole request."""
     cleaned = normalize(text)
-    cleaned = re.sub(
-        r"\b(?:open|launch|start|bring up)\s+(?:the\s+)?[a-z0-9 ]+?(?=\s+and\b|,|$)",
-        "",
-        cleaned,
-        count=1,
-    )
-    return bool(
-        re.search(
-            r"\b(and|then|search|type|click|compute|calculat|call|send|write|find)\b",
-            cleaned,
-        )
-    )
+    match = re.search(r"\b(?:open|launch|start|bring up)\s+(?:the\s+)?(.+)$", cleaned)
+    if not match:
+        return False
+    rest = match.group(1).strip()
+    for alias in sorted(APP_ALIASES, key=len, reverse=True):
+        if rest == alias:
+            return False
+        if rest.startswith(alias + " "):
+            leftover = rest[len(alias) :].strip()
+            leftover = re.sub(r"^(and|then|,)\s*", "", leftover)
+            return bool(leftover)
+    parts = rest.split()
+    if len(parts) <= 1:
+        return False
+    leftover = " ".join(parts[1:])
+    leftover = re.sub(r"^(and|then|,)\s*", "", leftover)
+    return bool(leftover)
 
 
 def parse_partial(text: str) -> list[Intent]:
