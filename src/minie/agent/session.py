@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 
 from minie.agent.intent import Intent, parse_partial
 from minie.agent.planner import Planner
@@ -9,7 +10,7 @@ from minie.agent.safety import blocks_passwords, is_stop, needs_confirm
 from minie.audio.asr import StreamingASR
 from minie.audio.capture import MicStream
 from minie.computer.cua import CuaDriver, CuaError, WindowTarget
-from minie.config import Config, STATUS_ACTING, STATUS_LISTENING
+from minie.config import STATUS_ACTING, STATUS_LISTENING, Config
 from minie.log import get_logger
 from minie.voice import tts
 
@@ -39,7 +40,7 @@ class Session:
         self,
         config: Config,
         cua: CuaDriver,
-        set_status: callable,
+        set_status: Callable[[str], None],
     ) -> None:
         self.config = config
         self.cua = cua
@@ -62,6 +63,8 @@ class Session:
         mic.clear()
         self.set_status(STATUS_LISTENING)
         tts.acknowledge()
+        time.sleep(0.55)
+        mic.clear()
         _LOG.info("session listening")
 
         last_partial = ""
@@ -71,11 +74,12 @@ class Session:
                 last_partial = text
                 if is_stop(text):
                     tts.speak("stopped")
-                    self.set_status(STATUS_LISTENING)
                     return
                 if blocks_passwords(text):
                     tts.speak("I will not type passwords.")
                     return
+                if _is_echo(text):
+                    continue
                 self._speculate(text)
             if asr.finished:
                 break
@@ -85,7 +89,7 @@ class Session:
             return
 
         final = last_partial or asr.last_text
-        if not final.strip():
+        if not final.strip() or _is_echo(final):
             tts.speak("I didn't catch that.")
             return
         if is_stop(final):
@@ -103,7 +107,6 @@ class Session:
             if intent.kind == "open_app" and intent.app_name and intent.app_name.lower() not in self._opened:
                 self._open(intent)
             elif intent.kind == "calculator" and not self._calc_done and intent.keys:
-                # Wait until the utterance sounds complete enough (has an equals path).
                 if any(w in text.lower() for w in ("equal", "compute", "calculat", "times", "plus", "minus")):
                     self._calculator(intent)
 
@@ -159,3 +162,8 @@ class Session:
             tts.speak("stopped")
             return
         tts.speak(summary[:140] if summary else "done")
+
+
+def _is_echo(text: str) -> bool:
+    cleaned = " ".join(text.lower().split()).strip(" .,?!")
+    return cleaned in {"yes", "yes?", "on it", "done", "stopped"}

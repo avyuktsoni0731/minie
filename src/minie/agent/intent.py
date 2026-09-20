@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from minie.audio.wake import normalize
+from minie.audio.phrases import normalize
 
 # Display name, bundle id
 APP_ALIASES: dict[str, tuple[str, str]] = {

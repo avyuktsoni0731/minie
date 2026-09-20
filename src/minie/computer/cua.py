@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -298,8 +299,6 @@ class CuaDriver:
             ).lower()
             if any(w == blob.strip() or w in blob.split() or blob.strip() == w for w in wanted):
                 return int(idx) if idx is not None else None
-        import re
-
         tree = target.tree.lower()
         for label in wanted:
             for line in tree.splitlines():
