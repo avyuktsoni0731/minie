@@ -11,6 +11,17 @@ from minie.log import get_logger
 _LOG = get_logger()
 
 
+def _resample(audio: np.ndarray, src_hz: int, dst_hz: int) -> np.ndarray:
+    if src_hz == dst_hz or audio.size == 0:
+        return audio.astype(np.float32, copy=False)
+    n = int(round(audio.size * dst_hz / src_hz))
+    if n <= 0:
+        return np.zeros(0, dtype=np.float32)
+    x_old = np.linspace(0.0, 1.0, audio.size, endpoint=False)
+    x_new = np.linspace(0.0, 1.0, n, endpoint=False)
+    return np.interp(x_new, x_old, audio.astype(np.float32)).astype(np.float32)
+
+
 class MicStream:
     """16 kHz mono ring buffer. Wake and ASR both read windows from here."""
 
@@ -22,17 +33,35 @@ class MicStream:
         self._filled = 0
         self._lock = threading.Lock()
         self._stream: sd.InputStream | None = None
+        self._native_sr = self.sr
+
+    @property
+    def started(self) -> bool:
+        return self._stream is not None
 
     def start(self) -> None:
         if self._stream is not None:
             return
+        device = sd.default.device[0] if isinstance(sd.default.device, (list, tuple)) else sd.default.device
+        try:
+            info = sd.query_devices(device, "input")
+            native = int(info.get("default_samplerate") or self.sr)
+            _LOG.info("input device: %s", info.get("name") or device)
+        except Exception:
+            native = self.sr
+        # AUHAL often rejects 16 kHz; capture native rate and resample.
+        self._native_sr = native if native >= 8000 else self.sr
+        _LOG.info("opening microphone at %d Hz (resample → %d)", self._native_sr, self.sr)
 
         def callback(indata, frames, time_info, status) -> None:  # noqa: ANN001
             if status:
                 _LOG.debug("mic status: %s", status)
             chunk = np.asarray(indata[:, 0], dtype=np.float32)
+            chunk = _resample(chunk, self._native_sr, self.sr)
             with self._lock:
                 n = chunk.shape[0]
+                if n == 0:
+                    return
                 end = self._idx + n
                 if end <= self._n:
                     self._buf[self._idx : end] = chunk
@@ -43,20 +72,34 @@ class MicStream:
                 self._idx = end % self._n
                 self._filled = min(self._n, self._filled + n)
 
-        self._stream = sd.InputStream(
-            samplerate=self.sr,
-            channels=1,
-            dtype="float32",
-            blocksize=512,
-            callback=callback,
-        )
-        self._stream.start()
-        _LOG.info("microphone started at %d Hz", self.sr)
+        last_err: Exception | None = None
+        for rate in (self._native_sr, 48000, 44100, self.sr):
+            try:
+                self._native_sr = rate
+                self._stream = sd.InputStream(
+                    samplerate=rate,
+                    channels=1,
+                    dtype="float32",
+                    blocksize=0,
+                    latency="high",
+                    callback=callback,
+                )
+                self._stream.start()
+                _LOG.info("microphone started at %d Hz", rate)
+                return
+            except Exception as exc:
+                last_err = exc
+                _LOG.warning("mic open at %d Hz failed: %s", rate, exc)
+                self._stream = None
+        raise RuntimeError(f"could not open microphone: {last_err}") from last_err
 
     def stop(self) -> None:
         if self._stream is not None:
-            self._stream.stop()
-            self._stream.close()
+            try:
+                self._stream.stop()
+                self._stream.close()
+            except Exception:
+                _LOG.debug("mic stop ignored an error", exc_info=True)
             self._stream = None
 
     def latest(self, seconds: float) -> np.ndarray:

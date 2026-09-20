@@ -76,8 +76,8 @@ mic → “Hey Minie” → streaming ASR → safe partial actions
 | --- | --- |
 | `GEMINI_API_KEY` | required for the planner |
 | `MINIE_WAKE_MODEL` | `mlx-community/whisper-tiny` |
-| `MINIE_ASR_MODEL` | `mlx-community/whisper-small-mlx` |
-| `MINIE_GEMINI_MODEL` | `gemini-2.5-flash` |
+| `MINIE_ASR_MODEL` | `mlx-community/whisper-tiny` (same as wake, avoids model swapping) |
+| `MINIE_GEMINI_MODEL` | `gemini-3.6-flash` |
 | `MINIE_DEBUG` | `0` |
 | `MINIE_DRY_RUN` | `0` (log Cua calls, do not click) |
 

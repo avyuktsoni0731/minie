@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -163,6 +164,13 @@ class CuaDriver:
         if not windows and pid:
             windows = self.list_windows(pid)
         if not windows:
+            deadline = time.monotonic() + 2.5
+            while time.monotonic() < deadline and pid:
+                time.sleep(0.2)
+                windows = self.list_windows(pid)
+                if windows:
+                    break
+        if not windows:
             return WindowTarget(pid=pid, window_id=0, name=str(data.get("name") or name or ""))
         win = windows[0]
         return WindowTarget(
@@ -171,6 +179,28 @@ class CuaDriver:
             name=str(data.get("name") or name or ""),
             title=str(win.get("title") or ""),
         )
+
+    def open_url(self, url: str) -> None:
+        if not url:
+            raise CuaError("open_url needs a URL")
+        if self.config.dry_run:
+            _LOG.info("dry-run open %s", url)
+            return
+        try:
+            proc = subprocess.run(
+                ["open", url],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            raise CuaError("open is not available") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise CuaError("open timed out") from exc
+        if proc.returncode != 0:
+            err = (proc.stderr or proc.stdout or "").strip()
+            raise CuaError(f"open failed: {err[:400]}")
 
     def snapshot(self, target: WindowTarget, include_screenshot: bool = True) -> WindowTarget:
         if not target.pid or not target.window_id:
@@ -267,6 +297,12 @@ class CuaDriver:
                 args["delivery_mode"] = "foreground"
                 return self.call("type_text", args)
             raise
+
+    def bring_to_front(self, target: WindowTarget) -> Any:
+        args: dict[str, Any] = {"pid": target.pid}
+        if target.window_id:
+            args["window_id"] = target.window_id
+        return self.call("bring_to_front", args)
 
     def press_key(
         self,

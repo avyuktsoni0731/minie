@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import subprocess
-import threading
 
 from minie.log import get_logger
 
@@ -32,4 +31,4 @@ def chime() -> None:
 
 def acknowledge() -> None:
     chime()
-    threading.Thread(target=speak, args=("yes?",), kwargs={"wait": True}, daemon=True).start()
+    speak("yes?", wait=True)

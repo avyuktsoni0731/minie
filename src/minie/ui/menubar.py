@@ -18,7 +18,11 @@ class StatusStore:
         self.value = status
 
 
-def start_menubar(store: StatusStore, on_quit: Callable[[], None]) -> None:
+def start_menubar(
+    store: StatusStore,
+    on_quit: Callable[[], None],
+    on_tick: Callable[[], None] | None = None,
+) -> None:
     if rumps is None:
         raise RuntimeError("rumps is not available")
 
@@ -27,10 +31,12 @@ def start_menubar(store: StatusStore, on_quit: Callable[[], None]) -> None:
             super().__init__("Minie", title=_title(store.value), quit_button="Quit Minie")
             self.menu = ["Minie v1 — Hey Minie"]
             self._last = store.value
-            self.timer = rumps.Timer(self._tick, 0.4)
+            self.timer = rumps.Timer(self._tick, 0.25)
             self.timer.start()
 
         def _tick(self, _timer: object) -> None:
+            if on_tick is not None:
+                on_tick()
             if store.value != self._last:
                 self._last = store.value
                 self.title = _title(store.value)

@@ -34,21 +34,45 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def _run(config: Config, *, no_menubar: bool) -> None:
+    from minie.audio.capture import MicStream
+
     store = StatusStore()
     engine = Engine(config, store.set)
+    mic = MicStream(config)
     if no_menubar:
         try:
-            engine.run()
+            engine.run(mic)
         except KeyboardInterrupt:
             _LOG.info("bye")
+        finally:
+            mic.stop()
         return
-    thread = threading.Thread(target=engine.run, name="minie-engine", daemon=True)
-    thread.start()
+
+    boot = threading.Thread(target=engine.prepare, name="minie-prepare", daemon=True)
+    boot.start()
+    loop_started = threading.Event()
+
+    def on_tick() -> None:
+        if not engine.prepared.is_set():
+            return
+        if not mic.started:
+            try:
+                mic.start()
+            except Exception:
+                _LOG.exception("microphone failed to start")
+                return
+        if not loop_started.is_set():
+            loop_started.set()
+            threading.Thread(target=engine.loop, args=(mic,), name="minie-engine", daemon=True).start()
+
     try:
-        start_menubar(store, engine.stop)
+        start_menubar(store, engine.stop, on_tick)
     except RuntimeError:
         _LOG.warning("menu bar unavailable; running in the terminal")
-        engine.run()
+        engine.run(mic)
+    finally:
+        engine.stop()
+        mic.stop()
 
 
 def _doctor(config: Config) -> int:
